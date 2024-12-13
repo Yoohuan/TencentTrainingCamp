@@ -11,6 +11,10 @@ public class AGoodStart : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
+        
+        bEnableUndefinedIdentifierWarnings = false;
+        
+        PublicDefinitions.Add("DISABLE_MACRO_REDEFINED_WARNINGS=1");
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

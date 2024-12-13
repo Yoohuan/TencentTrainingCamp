@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Bullet.h"
 #include "GameFramework/Actor.h"
 #include "Weapon.generated.h"
 
@@ -27,6 +26,42 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	void ShowPickWidget(bool bShowWidget);
+	virtual  void Fire(const FVector& HitTarget);
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	class UTexture2D* CrosshairsCenter;
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	class UTexture2D* CrosshairsLeft;
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	class UTexture2D* CrosshairsRight;
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	class UTexture2D* CrosshairsTop;
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	class UTexture2D* CrosshairsBottom;
+
+	/*
+	 *  Zoomed FOV while aiming
+	 */
+
+	UPROPERTY(EditAnywhere)
+	float ZoomedFOV = 30.f;
+
+	UPROPERTY(EditAnywhere)
+	float ZoomInterpSpeed = 20.f;
+
+	/*
+	 * Automatic fire
+	 */
+	UPROPERTY(EditAnywhere, Category = Combat)
+	float FireDelay = .15f;
+
+	UPROPERTY(EditAnywhere, Category = Combat)
+	bool bAutomatic = true;
+	
 protected:
 	virtual void BeginPlay() override;
 
@@ -64,9 +99,21 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
 	class UWidgetComponent* PickupWidget;
 
+	UPROPERTY(EditAnywhere, Category= "Weapon Properties")
+	class UAnimationAsset* FireAnimation;
+
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<class ACasing> CasingClass;
+
+	/*
+	 *  Textures for the weapon crosshairs
+	 */
+
+	
 public:	
 	void SetWeaponState(EWeaponState State);
 	FORCEINLINE USphereComponent* GetAreaSphere() const { return AreaSphere; }
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
-	
+	FORCEINLINE float GetZoomedFOV() const { return ZoomedFOV; }
+	FORCEINLINE float GetZoomInterpSpeed() const { return ZoomInterpSpeed; }
 };

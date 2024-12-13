@@ -32,6 +32,8 @@ void UStartAnimInstance::NativeUpdateAnimation(float DeltaTime)
     EquippedWeapon = StartCharacter->GetEquippedWeapon();
     bIsCrouched = StartCharacter->bIsCrouched;
     bAiming = StartCharacter->IsAiming();
+    TurningInPlace = StartCharacter->GetTurningInPlace();
+    bRotateRootBone = StartCharacter->ShouldRotateRootBone();
 
     // Offset Yaw for Strafing
     FRotator AimRotation = StartCharacter->GetBaseAimRotation();
@@ -58,6 +60,15 @@ void UStartAnimInstance::NativeUpdateAnimation(float DeltaTime)
         StartCharacter->GetMesh()->TransformToBoneSpace(FName("hand_r"), LeftHandTransform.GetLocation(), FRotator::ZeroRotator, OutPosition, OutRotation);
         LeftHandTransform.SetLocation(OutPosition);
         LeftHandTransform.SetRotation(FQuat(OutRotation));
+
+        if (StartCharacter->IsLocallyControlled())
+        {
+            bLocallyControlled = true;
+            FTransform RightHandTransform = EquippedWeapon->GetWeaponMesh()->GetSocketTransform(FName("hand_r"), RTS_World);
+            FRotator LookARotation = UKismetMathLibrary::FindLookAtRotation(RightHandTransform.GetLocation(), RightHandTransform.GetLocation() + (RightHandTransform.GetLocation() - StartCharacter->GetHitTarget()));
+            RightHandRotation = FMath::RInterpTo(RightHandRotation, LookARotation, DeltaTime, 30.f);
+        }
+        
     }
 }
 
