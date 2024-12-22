@@ -13,16 +13,16 @@ UCLASS()
 class AGOODSTART_API AStartPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-
+public:
+	void SetHUDHealth(float Health, float MaxHealth);
 protected:
 
 	/** Input Mapping Context to be used for player input */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input)
 	class UInputMappingContext* InputMappingContext;
-
-	// Begin Actor interface
-
+	
 	virtual void BeginPlay() override;
 
-	// End Actor interface
+private:
+	class AStartHUD* StartHUD;
 };

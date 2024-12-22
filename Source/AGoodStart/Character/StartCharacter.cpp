@@ -16,6 +16,9 @@
 #include "Net/UnrealNetwork.h"
 #include "StartAnimInstance.h"
 #include "AGoodStart/AGoodStart.h"
+#include "AGoodStart/PlayerController/StartPlayerController.h"
+#include "AGoodStart/GameMode/StartGameMode.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -51,6 +54,8 @@ AStartCharacter::AStartCharacter()
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
 	NetUpdateFrequency = 66.f;
 	MinNetUpdateFrequency = 33.f;
+
+	DissolveTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DissolveTimelineComponent"));
 }
 
 void AStartCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -58,6 +63,7 @@ void AStartCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME_CONDITION(AStartCharacter, OverlappingWeapon, COND_OwnerOnly);
+	DOREPLIFETIME(AStartCharacter, Health);
 }
 
 
@@ -69,10 +75,50 @@ void AStartCharacter::OnRep_ReplicateMovement()
 	TimeSinceLastMovementReplication = 0.f;
 }
 
+void AStartCharacter::Elim()
+{
+	MulticastElim();
+	GetWorldTimerManager().SetTimer(
+		ElimTimer,
+		this,
+		&AStartCharacter::ElimTimerFinished,
+		ElimDelay
+	);
+}
+
+void AStartCharacter::MulticastElim_Implementation()
+{
+	bElimmed = true;
+	PlayElimMontage();
+
+	if (DissolveMaterialInstance)
+	{
+		DynamicDissolveMaterialInstance = UMaterialInstanceDynamic::Create(DissolveMaterialInstance, this);
+		GetMesh()->SetMaterial(0, DynamicDissolveMaterialInstance);
+		DynamicDissolveMaterialInstance->SetScalarParameterValue(TEXT("Dissolve"), 0.55f);
+		DynamicDissolveMaterialInstance->SetScalarParameterValue(TEXT("Glow"), 200.f);
+	}
+	StartDissolve();
+}
+
+void AStartCharacter::ElimTimerFinished()
+{
+	AStartGameMode* StartGameMode = GetWorld()->GetAuthGameMode<AStartGameMode>();
+	if (StartGameMode)
+	{
+		StartGameMode->RequestRespawn(this, Controller);
+	}
+}
+
 void AStartCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	UpdateHUDHealth();
+	if (HasAuthority())
+	{
+		OnTakeAnyDamage.AddDynamic(this, &AStartCharacter::ReceiveDamage);
+	}
 }
 
 void AStartCharacter::Tick(float DeltaTime)
@@ -161,6 +207,15 @@ void AStartCharacter::PlayFireMontage(bool bAiming)
 	
 }
 
+void AStartCharacter::PlayElimMontage()
+{
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (AnimInstance && ElimMontage)
+	{
+		AnimInstance->Montage_Play(ElimMontage);
+	}
+}
+
 void AStartCharacter::PlayHitReactMontage()
 {
 	if(Combat == nullptr || Combat->EquippedWeapon == nullptr) return;
@@ -171,6 +226,25 @@ void AStartCharacter::PlayHitReactMontage()
 		AnimInstance->Montage_Play(HitReactMontage);
 		FName SectionName("FromFront");
 		AnimInstance->Montage_JumpToSection(SectionName);
+	}
+}
+
+void AStartCharacter::ReceiveDamage(AActor* DamagedActor, float Damage, const UDamageType* DamageType,
+	class AController* InstigatorController, AActor* DamageCauser)
+{
+	Health = FMath::Clamp(Health - Damage, 0.0f, MaxHealth);
+	UpdateHUDHealth();
+	PlayHitReactMontage();
+
+	if (Health == 0.f)
+	{
+		AStartGameMode* StartGameMode = GetWorld()->GetAuthGameMode<AStartGameMode>();
+		if (StartGameMode)
+		{
+			StartPlayerController = StartPlayerController == nullptr ? Cast<AStartPlayerController>(Controller) : StartPlayerController;
+			AStartPlayerController* AttackController = Cast<AStartPlayerController>(InstigatorController);
+			StartGameMode->PlayerEliminated(this, StartPlayerController, AttackController);
+		}
 	}
 }
 
@@ -448,11 +522,6 @@ void AStartCharacter::TurnInPlace(float DeltaTime)
 	}
 }
 
-void AStartCharacter::MulticastHit_Implementation()
-{
-	PlayHitReactMontage();
-}
-
 void AStartCharacter::HideCameraIfCharacterClose()
 {
 	if (!IsLocallyControlled()) return;
@@ -471,6 +540,39 @@ void AStartCharacter::HideCameraIfCharacterClose()
 		{
 			Combat->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = false;
 		}
+	}
+}
+
+void AStartCharacter::OnRep_Health()
+{
+	PlayHitReactMontage();
+	UpdateHUDHealth();
+}
+
+void AStartCharacter::UpdateHUDHealth()
+{
+	StartPlayerController = StartPlayerController == nullptr ? Cast<AStartPlayerController>(Controller) : StartPlayerController;
+	if (StartPlayerController)
+	{
+		StartPlayerController->SetHUDHealth(Health, MaxHealth);
+	}
+}
+
+void AStartCharacter::UpdateDissolveMaterial(float DissolveValue)
+{
+	if (DynamicDissolveMaterialInstance)
+	{
+		DynamicDissolveMaterialInstance->SetScalarParameterValue("Dissolve", DissolveValue);
+	}
+}
+
+void AStartCharacter::StartDissolve()
+{
+	DissolveTrack.BindDynamic(this, &AStartCharacter::UpdateDissolveMaterial);
+	if (DissolveCurve && DissolveTimeline)
+	{
+		DissolveTimeline->AddInterpFloat(DissolveCurve, DissolveTrack);
+		DissolveTimeline->Play();
 	}
 }
 

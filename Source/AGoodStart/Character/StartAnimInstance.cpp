@@ -34,6 +34,7 @@ void UStartAnimInstance::NativeUpdateAnimation(float DeltaTime)
     bAiming = StartCharacter->IsAiming();
     TurningInPlace = StartCharacter->GetTurningInPlace();
     bRotateRootBone = StartCharacter->ShouldRotateRootBone();
+    bElimmed = StartCharacter->IsElimmed();
 
     // Offset Yaw for Strafing
     FRotator AimRotation = StartCharacter->GetBaseAimRotation();
