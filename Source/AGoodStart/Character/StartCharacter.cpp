@@ -1,7 +1,6 @@
 
 
 #include "StartCharacter.h"
-
 #include "AGoodStart/AGoodStartComponets/CombatComponent.h"
 #include "AGoodStart/Weapon/Weapon.h"
 #include "Camera/CameraComponent.h"
@@ -19,6 +18,11 @@
 #include "AGoodStart/PlayerController/StartPlayerController.h"
 #include "AGoodStart/GameMode/StartGameMode.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Sound/SoundCue.h"
+#include "AGoodStart/PlayerState/StartPlayerState.h"
+#include "AGoodStart/Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -77,6 +81,10 @@ void AStartCharacter::OnRep_ReplicateMovement()
 
 void AStartCharacter::Elim()
 {
+	if (Combat && Combat->EquippedWeapon)
+	{
+		Combat->EquippedWeapon->Dropped();
+	}
 	MulticastElim();
 	GetWorldTimerManager().SetTimer(
 		ElimTimer,
@@ -88,9 +96,14 @@ void AStartCharacter::Elim()
 
 void AStartCharacter::MulticastElim_Implementation()
 {
+	if (StartPlayerController)
+	{
+		StartPlayerController->SetHUDWeaponAmmo(0);
+	}
 	bElimmed = true;
 	PlayElimMontage();
 
+	// Start dissolve effect
 	if (DissolveMaterialInstance)
 	{
 		DynamicDissolveMaterialInstance = UMaterialInstanceDynamic::Create(DissolveMaterialInstance, this);
@@ -99,6 +112,37 @@ void AStartCharacter::MulticastElim_Implementation()
 		DynamicDissolveMaterialInstance->SetScalarParameterValue(TEXT("Glow"), 200.f);
 	}
 	StartDissolve();
+
+	//Disable character movement
+	GetCharacterMovement()->DisableMovement();
+	GetCharacterMovement()->StopMovementImmediately();
+	if (StartPlayerController)
+	{
+		DisableInput(StartPlayerController);
+	}
+	// Disable collision
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// Spawn elim bot
+	if (ElimBotEffect)
+	{
+		FVector ElimBotSpawnPoint(GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z + 200.f);
+		ElimBotComponent = UGameplayStatics::SpawnEmitterAtLocation(
+			GetWorld(),
+			ElimBotEffect,
+			ElimBotSpawnPoint,
+			GetActorRotation()
+		);
+	}
+	if (ElimBotSound)
+	{
+		UGameplayStatics::SpawnSoundAtLocation(
+			this,
+			ElimBotSound,
+			GetActorLocation()
+		);
+	}
 }
 
 void AStartCharacter::ElimTimerFinished()
@@ -107,6 +151,20 @@ void AStartCharacter::ElimTimerFinished()
 	if (StartGameMode)
 	{
 		StartGameMode->RequestRespawn(this, Controller);
+	}
+	if (ElimBotComponent)
+	{
+		ElimBotComponent->DestroyComponent();
+	}
+}
+
+void AStartCharacter::Destroyed()
+{
+	Super::Destroyed();
+
+	if (ElimBotComponent)
+	{
+		ElimBotComponent->DestroyComponent();
 	}
 }
 
@@ -140,6 +198,7 @@ void AStartCharacter::Tick(float DeltaTime)
 	}
 
 	HideCameraIfCharacterClose();
+	PollInit();
 }
 
 void AStartCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -159,6 +218,7 @@ void AStartCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AStartCharacter::SetAimState);
 		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &AStartCharacter::FireButtonPressed);
 		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Completed, this, &AStartCharacter::FireButtonReleased);
+		EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AStartCharacter::ReloadButtonPressed);
 
 		// EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AStartCharacter::AimButtonPressed);
 		// EnhancedInputComponent->BindAction(AimAction,ETriggerEvent::Completed, this, &AStartCharacter::AimButtonReleased);
@@ -202,6 +262,28 @@ void AStartCharacter::PlayFireMontage(bool bAiming)
 		AnimInstance->Montage_Play(FireWeaponMontage);
 		FName SectionName;
 		SectionName = bAiming ? FName("RifleAim") : FName("RifleHip");
+		AnimInstance->Montage_JumpToSection(SectionName);
+	}
+	
+}
+
+void AStartCharacter::PlayReloadMontage()
+{
+	if(Combat == nullptr || Combat->EquippedWeapon == nullptr) return;
+
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (AnimInstance && ReloadMontage)
+	{
+		AnimInstance->Montage_Play(ReloadMontage);
+		FName SectionName;
+
+		switch (Combat->EquippedWeapon->GetWeaponType())
+		{
+		case EWeaponType::EWT_AssaultRifle:
+			SectionName = FName("Rifle");
+			break;
+		}
+		
 		AnimInstance->Montage_JumpToSection(SectionName);
 	}
 	
@@ -329,7 +411,6 @@ void AStartCharacter::Turn(float Value)
 
 void AStartCharacter::EquipButtonPressed()
 {
-	
 	if (Combat)
 	{
 		if (HasAuthority())
@@ -362,6 +443,14 @@ void AStartCharacter::CrouchButtonPressed()
 	else
 	{
 		Crouch();
+	}
+}
+
+void AStartCharacter::ReloadButtonPressed()
+{
+	if (Combat)
+	{
+		Combat->Reload();
 	}
 }
 
@@ -558,6 +647,19 @@ void AStartCharacter::UpdateHUDHealth()
 	}
 }
 
+void AStartCharacter::PollInit()
+{
+	if (StartPlayerState == nullptr)
+	{
+		StartPlayerState = GetPlayerState<AStartPlayerState>();
+		if (StartPlayerState)
+		{
+			StartPlayerState->AddToScore(0.f);
+			StartPlayerState->AddToDefeats(0);
+		}
+	}
+}
+
 void AStartCharacter::UpdateDissolveMaterial(float DissolveValue)
 {
 	if (DynamicDissolveMaterialInstance)
@@ -624,4 +726,10 @@ FVector AStartCharacter::GetHitTarget() const
 {
 	if (Combat == nullptr) return FVector();
 	return Combat->HitTarget;
+}
+
+ECombatState AStartCharacter::GetCombatState() const
+{
+	if (Combat == nullptr) return ECombatState::ECS_MAX;
+	return Combat->CombatState;
 }

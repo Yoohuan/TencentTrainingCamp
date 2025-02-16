@@ -4,6 +4,7 @@
 #include "AGoodStart/Weapon/Weapon.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "AGoodStart/StartTypes/CombatState.h"
 
 void UStartAnimInstance::NativeInitializeAnimation() 
 {
@@ -71,6 +72,8 @@ void UStartAnimInstance::NativeUpdateAnimation(float DeltaTime)
         }
         
     }
+
+    bUseFABRIK = StartCharacter->GetCombatState() != ECombatState::ECS_Reloading;
 }
 
 
